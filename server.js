@@ -9,7 +9,7 @@ const packageRoutes = require("./routes/packageRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const adminWaRoutes = require("./routes/adminWaRoutes");
 const dotenv = require("dotenv");
-
+require('./utils/cronJob');
 dotenv.config();
 connectDB();
 
@@ -31,7 +31,7 @@ app.use("/api", whatsappServiceRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api", packageRoutes);
 app.use("/api", subscriptionRoutes);
-app.use("/api",adminWaRoutes);
+app.use("/api/whatsapp",adminWaRoutes);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
