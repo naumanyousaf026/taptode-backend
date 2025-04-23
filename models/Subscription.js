@@ -11,26 +11,32 @@ const subscriptionSchema = new mongoose.Schema({
     ref: "Package", 
     required: true 
   },
-  purchaseDate: { 
+  startDate: { 
     type: Date, 
     default: Date.now 
   },
-  packageExpiry: { 
+  endDate: { 
     type: Date, 
     required: true 
   },
-  status: { 
+  isActive: { 
+    type: Boolean, 
+    default: true 
+  },
+  paymentId: { 
     type: String, 
-    enum: ['active', 'expired'], 
-    default: 'active' 
+    required: true 
+  },
+  paymentStatus: { 
+    type: String, 
+    enum: ["pending", "completed", "failed"],
+    default: "pending"
+  },
+  // For package 3 users - will store the list of available numbers
+  availableNumbers: {
+    type: [String],
+    default: []
   }
-}, { 
-  timestamps: true 
-});
-
-// Add a method to check if subscription is active
-subscriptionSchema.methods.isActive = function() {
-  return this.status === 'active' && this.packageExpiry > new Date();
-};
+}, { timestamps: true });
 
 module.exports = mongoose.model("Subscription", subscriptionSchema);

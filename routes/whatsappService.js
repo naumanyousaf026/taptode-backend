@@ -1,3 +1,4 @@
+// File: routes/whatsappService.js
 const mongoose = require("mongoose");
 const express = require("express");
 const { verifyToken } = require("../middleware/authMiddleware");
@@ -85,7 +86,7 @@ async function fetchWhatsAppAccounts() {
   const url = "https://smspro.pk/api/get/wa.accounts";
   const params = {
     secret: "e7d0098a46e0af84f43c2b240af5984ae267e08d",
-    sid: 1,
+    sid: 2,
     limit: 10,
     page: 1,
   };

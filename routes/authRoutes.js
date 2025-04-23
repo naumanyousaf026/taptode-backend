@@ -220,7 +220,7 @@ router.post("/forgot-password", async (req, res) => {
       secret: "e7d0098a46e0af84f43c2b240af5984ae267e08d",
       type: "sms",
       mode: "devices",
-      device: "e6138de1-be1b-2ff1-8685-380463973378",
+      device: "e6138de1be1b2ff1",
       sim: 1,
       phone: formattedPhone,
       message: `Your OTP is ${otp}`,
@@ -302,52 +302,6 @@ router.get("/current-user", authenticateToken, async (req, res) => {
 router.get('/verify', verifyToken, (req, res) => {
   res.status(200).json({ valid: true });
 });
-// router.get("/generate-whatsapp-qr", async (req, res) => {
-//   const { secret, sid } = req.query;
 
-//   if (!secret || !sid) {
-//     return res.status(400).json({
-//       message: "Missing required query parameters: 'secret' and 'sid'.",
-//     });
-//   }
-
-//   const url = "https://smspro.pk/api/create/wa.link";
-//   const params = { secret, sid };
-//   const maxRetries = 3;
-//   let attempt = 0;
-
-//   while (attempt < maxRetries) {
-//     try {
-//       const response = await axios.get(url, { params });
-
-//       if (response.data.status === 200) {
-//         return res.status(200).json({
-//           message: "WhatsApp QRCode has been created!",
-//           qrImageLink: response.data.data.qrimagelink,
-//           infoLink: response.data.data.infolink,
-//         });
-//       } else {
-//         return res.status(400).json({
-//           message: `Error generating QR code: ${
-//             response.data.message || "Unknown error"
-//           }`,
-//         });
-//       }
-//     } catch (error) {
-//       console.error(`Attempt ${attempt + 1}:`, error.message);
-//       attempt++;
-
-//       if (attempt >= maxRetries) {
-//         return res.status(503).json({
-//           message:
-//             "WhatsApp server is temporarily unavailable. Please try again later.",
-//         });
-//       }
-
-//       // Wait 2 seconds before retrying
-//       await new Promise((resolve) => setTimeout(resolve, 2000));
-//     }
-//   }
-// });
 
 module.exports = router;
