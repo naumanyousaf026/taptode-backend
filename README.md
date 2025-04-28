@@ -63,29 +63,41 @@ WHATSAPP_API_URL=https://api.smspro.pk/whatsapp
 
 ## 📊 API Documentation
 
-### Authentication Endpoints
-
+### Authentication Endpoints (`/api/auth`)
 - `POST /api/auth/register` - Register a new user
 - `POST /api/auth/login` - User login
 - `POST /api/auth/verify-otp` - Verify OTP during registration/login
 
-### User Management
+### Money & Withdrawal Management (`/api/money`)
+- `POST /api/money/withdraw` - Request a withdrawal
+- `GET /api/money/transactions` - View transaction history
+- `GET /api/money/balance` - Get current balance
 
-- `GET /api/users/profile` - Get user profile
-- `PUT /api/users/profile` - Update user profile
-- `GET /api/users/referrals` - Get user referrals
+### WhatsApp Services (`/api`)
+- `POST /api/send` - Send WhatsApp message
+- `GET /api/groups` - Get user  WhatsApp groups 
+- `POST /api/numbers` - Extract numbers from groups
 
-### WhatsApp Integration
+### Admin Routes (`/api/admin`)
+- `GET /api/admin/users` - Get all users
+- `POST /api/admin/approve-withdrawal` - Approve withdrawal request
+- `PUT /api/admin/update-user` - Update user information
 
-- `GET /api/whatsapp/qr` - Generate WhatsApp connection QR
-- `POST /api/whatsapp/webhook` - Webhook for WhatsApp events
-- `POST /api/whatsapp/send` - Send WhatsApp message
-
-### Package Management
-
+### Package Management (`/api`)
 - `GET /api/packages` - Get all available packages
 - `POST /api/packages/purchase` - Purchase a package
 - `GET /api/packages/history` - Get purchase history
+
+### Subscription Management (`/api`)
+- `GET /api/subscriptions` - Get user subscriptions
+- `POST /api/subscriptions/new` - Create new subscription
+- `PUT /api/subscriptions/:id` - Update subscription
+- `DELETE /api/subscriptions/:id` - Cancel subscription
+
+### Admin WhatsApp Management (`/api/whatsapp`)
+- `GET /api/whatsapp/qr` - Generate WhatsApp connection QR
+- `POST /api/whatsapp/info` - Webhook for WhatsApp events
+- `GET /api/whatsapp/status` - Check WhatsApp connection status
 
 ## 🔒 Security
 
@@ -102,9 +114,6 @@ WHATSAPP_API_URL=https://api.smspro.pk/whatsapp
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 📞 Contact
 
