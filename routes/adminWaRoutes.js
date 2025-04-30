@@ -34,6 +34,29 @@ const formatPhoneNumber = number => {
   return formatted;
 };
 
+// Get all connected WhatsApp accounts
+router.get('/accounts', async (req, res) => {
+  try {
+    const connectedContacts = await Contact.find({ status: 1 });
+    if (!connectedContacts.length) {
+      return res.status(404).json({ error: "No connected WhatsApp accounts found" });
+    }
+    
+    res.json({ 
+      success: true, 
+      total: connectedContacts.length, 
+      accounts: connectedContacts.map(contact => ({
+        id: contact._id,
+        whatsappId: contact.whatsappId,
+        uniqueId: contact.uniqueId
+      }))
+    });
+  } catch (error) {
+    console.error("Error fetching WhatsApp accounts:", error);
+    res.status(500).json({ error: "Failed to fetch WhatsApp accounts", message: error.message });
+  }
+});
+
 router.get('/groups', async (req, res) => {
   try {
     const connectedContacts = await Contact.find({ status: 1 });
@@ -105,19 +128,19 @@ const getMessageTypeFromMimetype = mimetype => {
   return 'file';
 };
 
-const sendMessageToSingleRecipient = async (uniqueId, recipient, message, messageType, fileData) => {
+const sendMessageToSingleRecipient = async (contact, recipient, message, messageType, fileData) => {
   try {
     const formattedNumber = formatPhoneNumber(recipient);
     if (!formattedNumber) return { recipient, success: false, error: "Invalid phone number format" };
 
-    console.log("Sending message to:", formattedNumber);
+    console.log(`Sending message from account ${contact.whatsappId} (${contact.uniqueId}) to: ${formattedNumber}`);
     console.log("Message Type:", messageType);
     if (message) console.log("Text Message:", message);
     if (fileData) console.log("File Data:", fileData);
 
     const data = new FormData();
     data.append('secret', API_SECRET);
-    data.append('account', uniqueId);
+    data.append('account', contact.uniqueId);
     data.append('recipient', formattedNumber);
     
     // Determine the correct message type and add appropriate fields
@@ -157,13 +180,28 @@ const sendMessageToSingleRecipient = async (uniqueId, recipient, message, messag
     console.log("API Response:", response.data);
 
     if (response.data?.status === 200) {
-      return { recipient: formattedNumber, success: true, data: response.data };
+      return { 
+        recipient: formattedNumber, 
+        success: true, 
+        data: response.data,
+        sentFrom: contact.whatsappId
+      };
     } else {
-      return { recipient: formattedNumber, success: false, error: response.data.message || "API error" };
+      return { 
+        recipient: formattedNumber, 
+        success: false, 
+        error: response.data.message || "API error",
+        sentFrom: contact.whatsappId
+      };
     }
   } catch (error) {
     console.error("Error while sending message:", error.message);
-    return { recipient, success: false, error: error.message };
+    return { 
+      recipient, 
+      success: false, 
+      error: error.message,
+      sentFrom: contact.whatsappId
+    };
   }
 };
 
@@ -177,6 +215,11 @@ router.post('/send', upload.single('file'), async (req, res) => {
     const customNumbers = req.body.customNumbers;
     const file = req.file;
 
+    // Validate contactId is provided
+    if (!contactId) {
+      return res.status(400).json({ error: "contactId is required to specify which WhatsApp account to use" });
+    }
+
     if (typeof recipients === 'string' && recipients.startsWith('[')) {
       try { recipients = JSON.parse(recipients); } catch { recipients = [recipients]; }
     }
@@ -189,8 +232,16 @@ router.post('/send', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: "At least one recipient is required" });
     }
 
+    // Find the specified WhatsApp account
     const contact = await Contact.findOne({ _id: contactId, status: 1 });
-    if (!contact) return res.status(404).json({ error: "Connected WhatsApp account not found" });
+    if (!contact) {
+      return res.status(404).json({ 
+        error: "Connected WhatsApp account not found", 
+        message: "Please make sure you've selected a valid connected WhatsApp account"
+      });
+    }
+
+    console.log(`Using WhatsApp account: ${contact.whatsappId} (${contact.uniqueId})`);
 
     let allRecipients = [];
     if (Array.isArray(recipients)) allRecipients = [...recipients];
@@ -213,15 +264,25 @@ router.post('/send', upload.single('file'), async (req, res) => {
 
     const results = [];
     for (const recipient of allRecipients) {
-      const result = await sendMessageToSingleRecipient(contact.uniqueId, recipient, message, messageType, fileData);
-      // console.log(`Result for ${recipient}:`, result);
+      const result = await sendMessageToSingleRecipient(contact, recipient, message, messageType, fileData);
       results.push(result);
     }
 
-    res.json({ success: true, total: results.length, results });
+    res.json({ 
+      success: true, 
+      total: results.length, 
+      sentFrom: contact.whatsappId,
+      results 
+    });
   } catch (error) {
     console.error("Error in send route:", error);
     res.status(500).json({ error: "Failed to send messages", message: error.message });
+  } finally {
+    // Clean up uploaded file if there was an error
+    if (fileData && fs.existsSync(fileData.path)) {
+      // Optionally delete the file after sending or on error
+      // fs.unlinkSync(fileData.path);
+    }
   }
 });
 
