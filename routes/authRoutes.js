@@ -16,7 +16,7 @@ const formatPhoneNumber = (phone) => {
   return phone;
 };
 
-// router.post("/register", async (req, res) => {
+
 //   const { email, phone, password, referredBy } = req.body;
 //   const formattedPhone = formatPhoneNumber(phone);
 //   const hashedPassword = await bcrypt.hash(password, 10);

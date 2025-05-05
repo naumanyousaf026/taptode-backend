@@ -3,20 +3,20 @@ const Admin = require("../models/Admin");
 
 const verifyAdminToken = async (req, res, next) => {
   const token = req.headers.authorization;
-  
-  if (!token) {
-    return res.status(401).json({ error: "Access denied. No token provided." });
+
+  if (!token || !token.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Access denied. Invalid or missing token." });
   }
 
   try {
     const tokenString = token.split(" ")[1];
     const decoded = jwt.verify(tokenString, process.env.JWT_SECRET);
 
-    if (!decoded.adminId) {
-      return res.status(403).json({ error: "Invalid admin token." });
+    if (decoded.role !== "admin") {
+      return res.status(403).json({ error: "Access denied. Not an admin." });
     }
 
-    const admin = await Admin.findById(decoded.adminId);
+    const admin = await Admin.findById(decoded.id);
     if (!admin) {
       return res.status(404).json({ error: "Admin not found." });
     }
@@ -34,5 +34,4 @@ const verifyAdminToken = async (req, res, next) => {
   }
 };
 
-// ✅ Export the function directly
 module.exports = verifyAdminToken;

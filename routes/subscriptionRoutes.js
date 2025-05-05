@@ -506,4 +506,109 @@ async function findAvailableGroup() {
   }
 }
 
+
+
+// ADMIN ROUTE: Get all subscriptions
+router.get("/admin/all-subscriptions", verifyAdminToken, async (req, res) => {
+  try {
+    // Optional query parameters for filtering
+    const { status, packageType, startDate, endDate } = req.query;
+    
+    // Build filter object
+    const filter = {};
+    
+    // Add filters if provided
+    if (status) {
+      filter.paymentStatus = status;
+    }
+    
+    if (packageType) {
+      filter.packageType = parseInt(packageType);
+    }
+    
+    // Date range filter
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      
+      if (startDate) {
+        filter.createdAt.$gte = new Date(startDate);
+      }
+      
+      if (endDate) {
+        filter.createdAt.$lte = new Date(endDate);
+      }
+    }
+    
+    // Get subscriptions with populated data
+    const subscriptions = await Subscription.find(filter)
+      .populate("userId", "name email phone")
+      .populate("packageId")
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      count: subscriptions.length,
+      data: subscriptions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+});
+
+// ADMIN ROUTE: Get subscription statistics
+router.get("/admin/subscription-stats", verifyAdminToken, async (req, res) => {
+  try {
+    // Get total counts by status
+    const pendingCount = await Subscription.countDocuments({ paymentStatus: "pending" });
+    const completedCount = await Subscription.countDocuments({ paymentStatus: "completed" });
+    const failedCount = await Subscription.countDocuments({ paymentStatus: "failed" });
+    
+    // Get total counts by package type
+    const package1Count = await Subscription.countDocuments({ packageType: 1 });
+    const package2Count = await Subscription.countDocuments({ packageType: 2 });
+    const package3Count = await Subscription.countDocuments({ packageType: 3 });
+    
+    // Get recent revenue (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentSubscriptions = await Subscription.find({
+      paymentStatus: "completed",
+      createdAt: { $gte: thirtyDaysAgo }
+    }).populate("packageId");
+    
+    const totalRevenue = recentSubscriptions.reduce((total, sub) => {
+      return total + (sub.packageId ? sub.packageId.price : 0);
+    }, 0);
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        statusCounts: {
+          pending: pendingCount,
+          completed: completedCount,
+          failed: failedCount,
+          total: pendingCount + completedCount + failedCount
+        },
+        packageCounts: {
+          package1: package1Count,
+          package2: package2Count,
+          package3: package3Count
+        },
+        recentRevenue: totalRevenue,
+        recentSubscriptionsCount: recentSubscriptions.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+});
 module.exports = router;

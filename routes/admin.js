@@ -2,6 +2,10 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const Admin = require("../models/Admin");
+const User = require("../models/User");
+const Withdrawal = require("../models/Withdrawal");
+const verifyAdminToken = require("../middleware/adminAuthMiddleware");
+
 const { sendOTPViaEmail } = require("../utils/otpService"); // Import OTP service
 require("dotenv").config();
 
@@ -54,12 +58,10 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  // Allow login only for the specific admin email
   if (email !== "naumanyousaf026@gmail.com") {
     return res.status(403).json({ message: "Access denied" });
   }
 
-  // Check if email and password are provided
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password are required" });
   }
@@ -75,17 +77,25 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
-    });
+    // ✅ Include role inside JWT payload
+    const token = jwt.sign(
+      {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: "admin"
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
 
     res.json({
       token,
-      admin: { 
-        id: admin._id, 
-        name: admin.name, 
+      admin: {
+        id: admin._id,
+        name: admin.name,
         email: admin.email,
-        role: 'admin' // Explicitly include role in response
+        role: "admin"
       }
     });
 
@@ -198,4 +208,160 @@ router.get("/fetch-groups/:userId", async (req, res) => {
   }
 });
 
+// Get all users with their referral relationships and balances
+router.get("/users", verifyAdminToken, async (req, res) => {
+  try {
+    // Find all users, populate the referredBy field to show referral relationships
+    const users = await User.find()
+      .select("userId email phone Balance referralLink referredBy Rewards")
+      .populate("referredBy", "userId email phone")
+      .sort({ userId: 1 });
+
+    // Map users to include if they were referred and by whom
+    const formattedUsers = users.map(user => {
+      return {
+        userId: user.userId,
+        email: user.email,
+        phone: user.phone,
+        balance: user.Balance,
+        rewards: user.Rewards,
+        referralLink: user.referralLink,
+        referredBy: user.referredBy ? {
+          userId: user.referredBy.userId,
+          email: user.referredBy.email,
+          phone: user.referredBy.phone
+        } : null,
+        wasReferred: user.referredBy ? true : false
+      };
+    });
+
+    res.status(200).json(formattedUsers);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Get all pending withdrawals
+router.get("/withdrawals/pending", verifyAdminToken, async (req, res) => {
+  try {
+    const pendingWithdrawals = await Withdrawal.find({ status: "pending" })
+      .populate("userId", "userId email phone")
+      .sort({ date: -1 });
+
+    res.status(200).json(pendingWithdrawals);
+  } catch (error) {
+    console.error("Error fetching pending withdrawals:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Get all withdrawals (with filter options)
+router.get("/withdrawals", verifyAdminToken, async (req, res) => {
+  try {
+    const { status, userId, fromDate, toDate } = req.query;
+    
+    // Build filter object based on query parameters
+    const filter = {};
+    if (status) filter.status = status;
+    if (userId) {
+      const user = await User.findOne({ userId: parseInt(userId) });
+      if (user) filter.userId = user._id;
+    }
+    
+    // Add date range filter if provided
+    if (fromDate || toDate) {
+      filter.date = {};
+      if (fromDate) filter.date.$gte = new Date(fromDate);
+      if (toDate) {
+        const endDate = new Date(toDate);
+        endDate.setDate(endDate.getDate() + 1); // Include the entire end date
+        filter.date.$lt = endDate;
+      }
+    }
+
+    const withdrawals = await Withdrawal.find(filter)
+      .populate("userId", "userId email phone")
+      .sort({ date: -1 });
+
+    res.status(200).json(withdrawals);
+  } catch (error) {
+    console.error("Error fetching withdrawals:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Approve withdrawal
+router.put("/withdrawals/:id/approve", verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { transactionDetails } = req.body; // Optional payment reference or notes
+
+    const withdrawal = await Withdrawal.findById(id);
+    if (!withdrawal) {
+      return res.status(404).json({ message: "Withdrawal not found" });
+    }
+
+    if (withdrawal.status !== "pending") {
+      return res.status(400).json({ 
+        message: `Withdrawal has already been ${withdrawal.status}` 
+      });
+    }
+
+    // Update withdrawal status to approved
+    withdrawal.status = "approved";
+    if (transactionDetails) {
+      withdrawal.transactionDetails = transactionDetails;
+    }
+    await withdrawal.save();
+
+    res.status(200).json({ 
+      message: "Withdrawal approved successfully", 
+      withdrawal 
+    });
+  } catch (error) {
+    console.error("Error approving withdrawal:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Reject withdrawal
+router.put("/withdrawals/:id/reject", verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const withdrawal = await Withdrawal.findById(id);
+    if (!withdrawal) {
+      return res.status(404).json({ message: "Withdrawal not found" });
+    }
+
+    if (withdrawal.status !== "pending") {
+      return res.status(400).json({ 
+        message: `Withdrawal has already been ${withdrawal.status}` 
+      });
+    }
+
+    // Find the user to refund their balance
+    const user = await User.findById(withdrawal.userId);
+    if (user) {
+      // Refund the withdrawn amount back to user's balance
+      user.Balance += withdrawal.amount;
+      await user.save();
+    }
+
+    // Update withdrawal status to rejected
+    withdrawal.status = "rejected";
+    withdrawal.rejectionReason = reason || "Rejected by admin";
+    await withdrawal.save();
+
+    res.status(200).json({ 
+      message: "Withdrawal rejected and amount refunded", 
+      withdrawal 
+    });
+  } catch (error) {
+    console.error("Error rejecting withdrawal:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
 module.exports = router;
