@@ -37,6 +37,34 @@ const subscriptionSchema = new mongoose.Schema({
     enum: ["pending", "completed", "failed"],
     default: "pending"
   },
+  // Payment details for EasyPaisa/JazzCash
+  paymentDetails: {
+    method: {
+      type: String,
+      enum: ["easypaisa", "jazzcash"],
+      required: true
+    },
+    receiverAccount: {
+      type: String,
+      required: true
+    },
+    senderPhoneNumber: {
+      type: String,
+      required: true
+    },
+    transactionId: {
+      type: String,
+      required: true
+    },
+    amount: {
+      type: Number,
+      required: true
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    }
+  },
   // For users to submit their own numbers (for all packages)
   userProvidedNumbers: {
     type: [String],
@@ -76,6 +104,34 @@ const subscriptionSchema = new mongoose.Schema({
   adminVerifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
+    default: null
+  },
+  // Admin notes for verification or rejection
+  adminNotes: {
+    type: String,
+    default: ""
+  },
+  // Additional payment verification fields - fixed by moving inside the schema object
+  paymentVerified: {
+    type: Boolean,
+    default: false
+  },
+  paymentVerificationMethod: {
+    type: String,
+    enum: ["manual", "automatic", null],
+    default: null
+  },
+  paymentNotificationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "PaymentNotification",
+    default: null
+  },
+  verificationAttempts: {
+    type: Number,
+    default: 0
+  },
+  lastVerificationAttempt: {
+    type: Date,
     default: null
   }
 }, { timestamps: true });

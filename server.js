@@ -7,7 +7,14 @@ const whatsappServiceRoutes = require("./routes/whatsappService");
 const adminRoutes = require("./routes/admin");
 const packageRoutes = require("./routes/packageRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
-const adminWaRoutes = require("./routes/adminWaRoutes");
+const adminWaRoutes = require("./routes/adminWaRoutes")
+const paymentVerification = require("./routes/PaymentVerification");
+
+
+
+// Import job scheduler
+const { schedulePaymentVerification } = require('./jobs/paymentVerificationScheduler');
+
 const dotenv = require("dotenv");
 const path = require('path');
 
@@ -37,8 +44,12 @@ app.use("/api/admin", adminRoutes);
 app.use("/api", packageRoutes);
 app.use("/api", subscriptionRoutes);
 app.use("/api/whatsapp",adminWaRoutes);
+app.use("/api/payment", paymentVerification);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Start the scheduled jobs after server is running
+  schedulePaymentVerification();
 });
