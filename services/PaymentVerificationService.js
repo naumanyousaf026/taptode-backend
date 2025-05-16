@@ -5,7 +5,7 @@ const User = require("../models/User");
 
 // API Secret for authentication
 const API_SECRET = "e7d0098a46e0af84f43c2b240af5984ae267e08d";
-const WHATSAPP_ACCOUNT = "174729556645c48cce2e2d7fbdea1afc51c7c6ad2668259d4ec158d";
+const WHATSAPP_ACCOUNT = "174737300545c48cce2e2d7fbdea1afc51c7c6ad266826cbcd9b426";
 
 // Payment method constants
 const PAYMENT_METHODS = {
@@ -569,8 +569,17 @@ class PaymentVerificationService {
   static async sendWhatsAppMessage(params) {
     try {
       const { phone, packageName, expiryDate, status, reason } = params;
-      console.log(`Sending WhatsApp message to ${phone} for status: ${status}`);
+      let message = '';
       
+      if (status === 'success') {
+        message = `✅ *SUBSCRIPTION ACTIVATED*\n\nYour subscription for the *"${packageName}"* package has been *successfully activated*.\n\n*Expiry Date:* ${expiryDate}`;
+      } else if (status === 'failed') {
+        message = `❌ *SUBSCRIPTION REJECTED*\n\nYour subscription request was *rejected*.\n\n*Reason:* ${reason || 'Payment verification failed'}`;
+      } else {
+        message = `⚠️ *SUBSCRIPTION PENDING*\n\nYour subscription status is *pending*. Please contact support.`;
+      }
+  
+ 
       const url = "https://smspro.pk/api/send/whatsapp";
       const formData = new FormData();
       
@@ -579,226 +588,191 @@ class PaymentVerificationService {
       formData.append('account', WHATSAPP_ACCOUNT);
       formData.append('recipient', phone); // Format: +923XXXXXXXXX
       formData.append('type', 'text');
-      
-      // Create message based on subscription status
-      let message = '';
-      if (status === 'success') {
-        message = `✅ Your subscription for the "${packageName}" package has been successfully activated.\nExpiry Date: ${expiryDate}`;
-      } else if (status === 'failed') {
-        message = `❌ Your subscription request was rejected.\nReason: ${reason || 'Payment verification failed'}`;
-      } else {
-        message = `⚠️ Your subscription status is pending. Please contact support.`;
-      }
-      
       formData.append('message', message);
       
-      // Send the message and log the complete response
       const response = await axios.post(url, formData, { 
         headers: formData.getHeaders() 
       });
       
-      console.log("WhatsApp message API response:", {
-        status: response.status,
-        statusText: response.statusText,
-        data: response.data
-      });
-      
+      console.log("WhatsApp message sent successfully:", response.data);
       return {
         success: true,
         response: response.data
       };
     } catch (error) {
-      console.error("Error sending WhatsApp message:", error.message);
-      if (error.response) {
-        console.error("WhatsApp API error response:", {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data
-        });
-      }
-      
+      console.error("Error sending WhatsApp message:", error);
       return {
         success: false,
         error: error.message
       };
     }
   }
-
-  /**
-   * Verify payment with subscription
-   * @param {Object} paymentDetails Payment details
-   * @returns {Promise<Boolean>} True if verified
-   */
-  static async verifyPaymentWithSubscription(paymentDetails) {
-    try {
-      if (!paymentDetails) {
-        return false;
-      }
-      
-      // For better matching, allow verification with either transaction ID or amount
-      if (!paymentDetails.transactionId && !paymentDetails.amount) {
-        return false;
-      }
-      
-      try {
-        // First, check if this transaction ID has already been used for a verified subscription
-        if (paymentDetails.transactionId) {
-          const existingVerified = await Subscription.findOne({
-            "paymentDetails.transactionId": paymentDetails.transactionId,
-            paymentStatus: "completed",
-            paymentVerified: true
-          });
-          
-          if (existingVerified) {
-            // Find the pending subscription that's trying to use this TID
-            const pendingSubscription = await Subscription.findOne({
-              "paymentDetails.transactionId": paymentDetails.transactionId,
-              paymentStatus: "pending"
-            }).populate("userId");
-            
-            // If found, send notification about duplicate transaction
-            if (pendingSubscription && pendingSubscription.userId) {
-              const user = await User.findById(pendingSubscription.userId);
-              if (user) {
-                await this.sendDuplicateTransactionNotification(user, paymentDetails.transactionId);
-              }
-            }
-            
-            return false;
-          }
-        }
-        
-        // Build query based on available data
-        let query = {
-          paymentStatus: "pending"
-        };
-        
-        // Add transaction ID to query if available
-        if (paymentDetails.transactionId) {
-          // Try exact match or match as paymentId
-          query["$or"] = [
-            { "paymentDetails.transactionId": paymentDetails.transactionId },
-            { "paymentId": paymentDetails.transactionId }
-          ];
-        }
-        
-        // Add amount range to query if available
-        if (paymentDetails.amount) {
-          // Use a wider tolerance (±5%) for better matching
-          query["paymentDetails.amount"] = { 
-            $gte: paymentDetails.amount * 0.95, 
-            $lte: paymentDetails.amount * 1.05 
-          };
-        }
-        
-        // Find pending subscription matching the criteria
-        let subscription = await Subscription.findOne(query).populate("userId");
-        
-        if (!subscription && paymentDetails.transactionId && paymentDetails.amount) {
-          // If no match with transaction ID and amount together, try with just amount
-          const amountOnlyQuery = {
-            paymentStatus: "pending",
-            "paymentDetails.amount": { 
-              $gte: paymentDetails.amount * 0.95, 
-              $lte: paymentDetails.amount * 1.05 
-            }
-          };
-          
-          // If we have payment method, add it to the query
-          if (paymentDetails.method) {
-            amountOnlyQuery["paymentDetails.method"] = paymentDetails.method;
-          }
-          
-          const amountOnlySubscription = await Subscription.findOne(amountOnlyQuery).populate("userId");
-          
-          if (amountOnlySubscription) {
-            subscription = amountOnlySubscription;
-          } else {
-            return false;
-          }
-        } else if (!subscription) {
-          // No subscription found
-          return false;
-        }
-        
-        console.log("Payment verification in progress for subscription:", subscription._id);
-        
-        // Check if payment amount is less than required
-        if (paymentDetails.amount && 
-            subscription.paymentDetails && 
-            subscription.paymentDetails.amount && 
-            paymentDetails.amount < subscription.paymentDetails.amount * 0.95) {
-          
-          // Mark as incomplete payment
-          subscription.paymentStatus = "incomplete";
-          subscription.lastVerificationAttempt = new Date();
-          await subscription.save();
-          
-          console.log("Payment verification failed: Incomplete payment amount");
-          
-          // Send incomplete payment notification
-          if (subscription.userId) {
-            const user = await User.findById(subscription.userId);
-            if (user) {
-              await this.sendIncompletePaymentNotification(user, subscription);
-            }
-          }
-          
-          return false;
-        }
-        
-        // Update the subscription
-        subscription.paymentStatus = "completed";
-        subscription.paymentVerified = true;
-        subscription.paymentVerificationMethod = "automatic";
-        subscription.lastVerificationAttempt = new Date();
-        subscription.isActive = true; // Activate the subscription
-        
-        // Add extra information if available
-        if (paymentDetails.transactionId && !subscription.paymentDetails.transactionId) {
-          subscription.paymentDetails.transactionId = paymentDetails.transactionId;
-        }
-        
-        // Save the notification ID if available
-        if (paymentDetails.notificationId) {
-          subscription.paymentNotificationId = paymentDetails.notificationId;
-        }
-        
-        // Save the subscription
-        await subscription.save();
-        console.log("Payment has been verified and subscription status updated to COMPLETED");
-        
-        // Update the user's subscription status and send notification
-        if (subscription.userId) {
-          try {
-            const user = await User.findById(subscription.userId);
-            if (user) {
-              // Update user subscription status based on the plan
-              user.subscriptionStatus = "active";
-              user.subscriptionExpiryDate = subscription.endDate;
-              
-              await user.save();
-              console.log("User subscription status updated to ACTIVE");
-              
-              // Send success notification to user
-              await this.sendPaymentSuccessNotification(user, subscription);
-            }
-          } catch (userError) {
-            console.error("Error updating user subscription status:", userError);
-            // Continue even if user update fails - the subscription is verified
-          }
-        }
-        
-        return true;
-      } catch (dbError) {
-        console.error("Database error during verification:", dbError);
-        return false;
-      }
-    } catch (error) {
-      console.error("Error verifying payment with subscription:", error);
+/**
+ * Verify payment with subscription
+ * @param {Object} paymentDetails Payment details
+ * @returns {Promise<Boolean>} True if verified
+ */
+static async verifyPaymentWithSubscription(paymentDetails) {
+  try {
+    if (!paymentDetails || !paymentDetails.transactionId) {
       return false;
     }
+
+    // First, check if this transaction ID has been used in any previous subscription
+    const existingSubscription = await Subscription.findOne({
+      "paymentDetails.transactionId": paymentDetails.transactionId,
+      paymentStatus: { $in: ["completed", "verified"] }
+    });
+
+    // Find the current pending subscription with this transaction ID
+    const subscription = await Subscription.findOne({
+      "paymentDetails.transactionId": paymentDetails.transactionId,
+      paymentStatus: "pending"
+    }).populate("userId").populate("packageId");
+
+    if (!subscription) {
+      console.log("No pending subscription found for transaction ID:", paymentDetails.transactionId);
+      return false;
+    }
+
+    const user = subscription.userId;
+    if (!user) {
+      console.log("User not found for subscription:", subscription._id);
+      return false;
+    }
+
+    // If this transaction ID has already been used, reject the payment
+    if (existingSubscription) {
+      console.log(`Transaction ID ${paymentDetails.transactionId} has already been used in subscription: ${existingSubscription._id}`);
+      
+      // Update subscription status to 'failed'
+      subscription.paymentStatus = "failed";
+      subscription.lastVerificationAttempt = new Date();
+      subscription.adminNotes = "Transaction ID already used in a previous subscription";
+      await subscription.save();
+
+      // Notify user about the duplicate transaction ID
+      await this.sendWhatsAppMessage({
+        phone: user.phone,
+        packageName: subscription.packageName || "subscription package",
+        status: "failed",
+        reason: `*Duplicate Transaction ID*: The Transaction ID ${paymentDetails.transactionId} has already been used for a previous subscription. Each payment requires a unique transaction ID.`
+      });
+
+      // Notify user via SMS as well
+      await this.sendSms(user.phone, 
+        `Your subscription payment has been rejected. Reason: Transaction ID ${paymentDetails.transactionId} has already been used. Please make a new payment with a unique transaction ID.`);
+
+      return false;
+    }
+
+    // Get the required package details
+    const selectedPackage = subscription.packageId;
+    if (!selectedPackage) {
+      console.log("Package details not found for subscription:", subscription._id);
+      // Update subscription status to 'failed'
+      subscription.paymentStatus = "failed";
+      subscription.lastVerificationAttempt = new Date();
+      await subscription.save();
+      
+      await this.sendPaymentFailureNotification(user, subscription, "Package details not found");
+      return false;
+    }
+
+    // Check the payment amount against the selected package's price
+    const expectedAmount = selectedPackage.price;
+    if (!paymentDetails.amount || paymentDetails.amount < expectedAmount) {
+      console.log(`Payment amount mismatch. Expected: ${expectedAmount}, Received: ${paymentDetails.amount}`);
+      
+      // Update subscription status to 'failed'
+      subscription.paymentStatus = "failed";
+      subscription.lastVerificationAttempt = new Date();
+      await subscription.save();
+
+      // Notify user about the amount mismatch via WhatsApp
+      await this.sendWhatsAppMessage({
+        phone: user.phone,
+        packageName: selectedPackage.name,
+        status: "failed",
+        reason: `Payment amount is insufficient. Required: Rs. ${expectedAmount}, Received: Rs. ${paymentDetails.amount || 0}`
+      });
+
+      // Notify user via SMS as well
+      await this.sendSms(user.phone, 
+        `Your payment for the ${selectedPackage.name} package has been rejected. Reason: Insufficient payment amount. Required: Rs. ${expectedAmount}, Received: Rs. ${paymentDetails.amount || 0}`);
+
+      return false;
+    }
+
+    // If everything is verified, update subscription
+    subscription.paymentStatus = "completed";
+    subscription.paymentVerified = true;
+    subscription.paymentVerificationMethod = "automatic";
+    subscription.verificationDate = new Date();
+    subscription.lastVerificationAttempt = new Date();
+    subscription.isActive = true;
+    
+    // Update payment details with the verification result
+    if (!subscription.paymentDetails) {
+      subscription.paymentDetails = {};
+    }
+    subscription.paymentDetails = {
+      ...subscription.paymentDetails,
+      ...paymentDetails,
+      verifiedAt: new Date()
+    };
+    
+    await subscription.save();
+    
+    // Update user subscription status
+    user.subscriptionStatus = "active";
+    user.subscriptionExpiryDate = subscription.endDate;
+    user.subscriptionPlan = subscription.packageId;
+    await user.save();
+    
+    // Send success notification to user
+    await this.sendPaymentSuccessNotification(user, subscription);
+    
+    return true;
+  } catch (error) {
+    console.error("Error verifying payment with subscription:", error);
+    return false;
   }
+}
+/**
+ * Check if a transaction ID has already been used
+ * @param {String} transactionId Transaction ID to check
+ * @returns {Promise<Object>} Result with existing subscription if found
+ */
+static async checkDuplicateTransaction(transactionId) {
+  try {
+    if (!transactionId) {
+      return { isDuplicate: false };
+    }
+    
+    // Check if this transaction ID has been used in any previous subscription
+    const existingSubscription = await Subscription.findOne({
+      "paymentDetails.transactionId": transactionId,
+      paymentStatus: { $in: ["completed", "verified"] }
+    }).populate("userId", "name email phone");
+    
+    if (existingSubscription) {
+      return {
+        isDuplicate: true,
+        subscription: existingSubscription
+      };
+    }
+    
+    return { isDuplicate: false };
+  } catch (error) {
+    console.error("Error checking duplicate transaction:", error);
+    return { 
+      isDuplicate: false, 
+      error: error.message 
+    };
+  }
+}
+ 
 
   /**
    * Send SMS using the provided API
@@ -868,310 +842,310 @@ class PaymentVerificationService {
     }
   }
 
-  /**
-   * Send payment failure notification to user
-   * @param {Object} user User object
-   * @param {Object} subscription Subscription object
-   * @param {String} reason Failure reason
-   * @returns {Promise<void>}
-   */
-  static async sendPaymentFailureNotification(user, subscription, reason) {
-    try {
-      if (!user || !user.phone) {
-        console.log("Cannot send notification: user phone missing");
-        return;
-      }
-      
-      console.log(`Sending payment failure notification to user ${user._id}`);
-      
-      // Get package details
-      const packageName = subscription.packageName || "Subscription Package";
-      
-      // Send notifications in parallel
-      await Promise.all([
-        // Send SMS notification
-        this.sendSms(user.phone, `Your payment verification failed. Reason: ${reason}`),
-        
-        // Send WhatsApp notification
-        this.sendWhatsAppMessage({
-          phone: user.phone,
-          packageName: packageName,
-          status: "failed",
-          reason: reason
-        })
-      ]);
-      
-      console.log(`Failure notifications sent to ${user.phone}`);
-    } catch (error) {
-      console.error("Error sending payment failure notification:", error);
-    }
-  }
-
-  /**
-   * Send incomplete payment notification to user
-   * @param {Object} user User object
-   * @param {Object} subscription Subscription object
-   * @returns {Promise<void>}
-   */
-  static async sendIncompletePaymentNotification(user, subscription) {
-    try {
-      if (!user || !user.phone) {
-        console.log("Cannot send notification: user phone missing");
-        return;
-      }
-      
-      console.log(`Sending incomplete payment notification to user ${user._id}`);
-      
-      // Get package details
-      const packageName = subscription.packageName || "Subscription Package";
-      
-      // Send notifications in parallel
-      await Promise.all([
-        // Send SMS notification
-        this.sendSms(user.phone, "Incomplete payment. Please send the full amount."),
-        
-        // Send WhatsApp notification
-        this.sendWhatsAppMessage({
-          phone: user.phone,
-          packageName: packageName,
-          status: "failed",
-          reason: "Incomplete payment amount received. Please send the full amount."
-        })
-      ]);
-      
-      console.log(`Incomplete payment notifications sent to ${user.phone}`);
-    } catch (error) {
-      console.error("Error sending incomplete payment notification:", error);
-    }
-  }
-
-  /**
-   * Send duplicate transaction notification to user
-   * @param {Object} user User object
-   * @param {String} transactionId Transaction ID
-   * @returns {Promise<void>}
-   */
-  static async sendDuplicateTransactionNotification(user, transactionId) {
-    try {
-      if (!user || !user.phone) {
-        console.log("Cannot send notification: user phone missing");
-        return;
-      }
-      
-      console.log(`Sending duplicate transaction notification to user ${user._id}`);
-      
-      const reason = `Transaction ID ${transactionId} has already been used for a previous subscription. Please use a new transaction ID.`;
-      
-      // Send notifications in parallel
-      await Promise.all([
-        // Send SMS notification
-        this.sendSms(user.phone, reason),
-        
-        // Send WhatsApp notification
-        this.sendWhatsAppMessage({
-          phone: user.phone,
-          packageName: "Subscription",
-          status: "failed",
-          reason: reason
-        })
-      ]);
-      
-      console.log(`Duplicate transaction notifications sent to ${user.phone}`);
-    } catch (error) {
-      console.error("Error sending duplicate transaction notification:", error);
-    }
-  }
-
-  /**
-   * Manually verify payment
-   * @param {String} subscriptionId Subscription ID
-   * @param {String} adminId Admin ID
-   * @param {String} notes Admin notes
-   * @returns {Promise<Object>} Result of verification
-   */
-  static async manuallyVerifyPayment(subscriptionId, adminId, notes) {
-    try {
-      if (!subscriptionId) {
-        return {
-          success: false,
-          message: "Subscription ID is required"
-        };
-      }
-      
-      // Find the subscription
-      const subscription = await Subscription.findById(subscriptionId);
-      
-      if (!subscription) {
-        return {
-          success: false,
-          message: "Subscription not found"
-        };
-      }
-      
-      console.log(`Manual verification initiated for subscription: ${subscriptionId}`);
-      
-      // Update subscription
-      subscription.paymentStatus = "completed";
-      subscription.paymentVerified = true;
-      subscription.paymentVerificationMethod = "manual";
-      subscription.adminVerified = true;
-      subscription.adminVerifiedBy = adminId;
-      subscription.adminNotes = notes || "";
-      subscription.verificationDate = new Date();
-      subscription.lastVerificationAttempt = new Date();
-      subscription.isActive = true; // Activate the subscription
-      
-      // Save subscription
-      await subscription.save();
-      console.log("Payment has been manually verified and subscription status updated to COMPLETED");
-      
-      // Find the user to update their subscription status
-      const user = await User.findById(subscription.userId);
-      
-      if (user) {
-        // Update user subscription status based on the plan
-        user.subscriptionStatus = "active";
-        user.subscriptionExpiryDate = subscription.endDate;
-        user.subscriptionPlan = subscription.packageId;
-        
-        await user.save();
-        console.log("User subscription status updated to ACTIVE");
-        
-        // Send success notification to user
-        await this.sendPaymentSuccessNotification(user, subscription);
-      }
-      
-      return {
-        success: true,
-        message: "Payment manually verified successfully",
-        subscription: {
-          id: subscription._id,
-          plan: subscription.packageId,
-          amount: subscription.paymentDetails?.amount,
-          status: subscription.paymentStatus,
-          expiryDate: subscription.endDate
+    /**
+     * Send payment failure notification to user
+     * @param {Object} user User object
+     * @param {Object} subscription Subscription object
+     * @param {String} reason Failure reason
+     * @returns {Promise<void>}
+     */
+    static async sendPaymentFailureNotification(user, subscription, reason) {
+      try {
+        if (!user || !user.phone) {
+          console.log("Cannot send notification: user phone missing");
+          return;
         }
-      };
-    } catch (error) {
-      console.error("Error manually verifying payment:", error);
-      return {
-        success: false,
-        message: "Error manually verifying payment: " + error.message
-      };
+        
+        console.log(`Sending payment failure notification to user ${user._id}`);
+        
+        // Get package details
+        const packageName = subscription.packageName || "Subscription Package";
+        
+        // Send notifications in parallel
+        await Promise.all([
+          // Send SMS notification
+          this.sendSms(user.phone, `Your payment verification failed. Reason: ${reason}`),
+          
+          // Send WhatsApp notification
+          this.sendWhatsAppMessage({
+            phone: user.phone,
+            packageName: packageName,
+            status: "failed",
+            reason: reason
+          })
+        ]);
+        
+        console.log(`Failure notifications sent to ${user.phone}`);
+      } catch (error) {
+        console.error("Error sending payment failure notification:", error);
+      }
+    }
+  
+    /**
+     * Send incomplete payment notification to user
+     * @param {Object} user User object
+     * @param {Object} subscription Subscription object
+     * @returns {Promise<void>}
+     */
+    static async sendIncompletePaymentNotification(user, subscription) {
+      try {
+        if (!user || !user.phone) {
+          console.log("Cannot send notification: user phone missing");
+          return;
+        }
+        
+        console.log(`Sending incomplete payment notification to user ${user._id}`);
+        
+        // Get package details
+        const packageName = subscription.packageName || "Subscription Package";
+        
+        // Send notifications in parallel
+        await Promise.all([
+          // Send SMS notification
+          this.sendSms(user.phone, "Incomplete payment. Please send the full amount."),
+          
+          // Send WhatsApp notification
+          this.sendWhatsAppMessage({
+            phone: user.phone,
+            packageName: packageName,
+            status: "failed",
+            reason: "Incomplete payment amount received. Please send the full amount."
+          })
+        ]);
+        
+        console.log(`Incomplete payment notifications sent to ${user.phone}`);
+      } catch (error) {
+        console.error("Error sending incomplete payment notification:", error);
+      }
+    }
+  
+    /**
+     * Send duplicate transaction notification to user
+     * @param {Object} user User object
+     * @param {String} transactionId Transaction ID
+     * @returns {Promise<void>}
+     */
+    static async sendDuplicateTransactionNotification(user, transactionId) {
+      try {
+        if (!user || !user.phone) {
+          console.log("Cannot send notification: user phone missing");
+          return;
+        }
+        
+        console.log(`Sending duplicate transaction notification to user ${user._id}`);
+        
+        const reason = `Transaction ID ${transactionId} has already been used for a previous subscription. Please use a new transaction ID.`;
+        
+        // Send notifications in parallel
+        await Promise.all([
+          // Send SMS notification
+          this.sendSms(user.phone, reason),
+          
+          // Send WhatsApp notification
+          this.sendWhatsAppMessage({
+            phone: user.phone,
+            packageName: "Subscription",
+            status: "failed",
+            reason: reason
+          })
+        ]);
+        
+        console.log(`Duplicate transaction notifications sent to ${user.phone}`);
+      } catch (error) {
+        console.error("Error sending duplicate transaction notification:", error);
+      }
+    }
+  
+    /**
+     * Manually verify payment
+     * @param {String} subscriptionId Subscription ID
+     * @param {String} adminId Admin ID
+     * @param {String} notes Admin notes
+     * @returns {Promise<Object>} Result of verification
+     */
+    static async manuallyVerifyPayment(subscriptionId, adminId, notes) {
+      try {
+        if (!subscriptionId) {
+          return {
+            success: false,
+            message: "Subscription ID is required"
+          };
+        }
+        
+        // Find the subscription
+        const subscription = await Subscription.findById(subscriptionId);
+        
+        if (!subscription) {
+          return {
+            success: false,
+            message: "Subscription not found"
+          };
+        }
+        
+        console.log(`Manual verification initiated for subscription: ${subscriptionId}`);
+        
+        // Update subscription
+        subscription.paymentStatus = "completed";
+        subscription.paymentVerified = true;
+        subscription.paymentVerificationMethod = "manual";
+        subscription.adminVerified = true;
+        subscription.adminVerifiedBy = adminId;
+        subscription.adminNotes = notes || "";
+        subscription.verificationDate = new Date();
+        subscription.lastVerificationAttempt = new Date();
+        subscription.isActive = true; // Activate the subscription
+        
+        // Save subscription
+        await subscription.save();
+        console.log("Payment has been manually verified and subscription status updated to COMPLETED");
+        
+        // Find the user to update their subscription status
+        const user = await User.findById(subscription.userId);
+        
+        if (user) {
+          // Update user subscription status based on the plan
+          user.subscriptionStatus = "active";
+          user.subscriptionExpiryDate = subscription.endDate;
+          user.subscriptionPlan = subscription.packageId;
+          
+          await user.save();
+          console.log("User subscription status updated to ACTIVE");
+          
+          // Send success notification to user
+          await this.sendPaymentSuccessNotification(user, subscription);
+        }
+        
+        return {
+          success: true,
+          message: "Payment manually verified successfully",
+          subscription: {
+            id: subscription._id,
+            plan: subscription.packageId,
+            amount: subscription.paymentDetails?.amount,
+            status: subscription.paymentStatus,
+            expiryDate: subscription.endDate
+          }
+        };
+      } catch (error) {
+        console.error("Error manually verifying payment:", error);
+        return {
+          success: false,
+          message: "Error manually verifying payment: " + error.message
+        };
+      }
+    }
+    
+    /**
+     * Manually reject payment
+     * @param {String} subscriptionId Subscription ID
+     * @param {String} adminId Admin ID
+     * @param {String} reason Rejection reason
+     * @returns {Promise<Object>} Result of rejection
+     */
+    static async manuallyRejectPayment(subscriptionId, adminId, reason) {
+      try {
+        if (!subscriptionId) {
+          return {
+            success: false,
+            message: "Subscription ID is required"
+          };
+        }
+        
+        // Find the subscription
+        const subscription = await Subscription.findById(subscriptionId);
+        
+        if (!subscription) {
+          return {
+            success: false,
+            message: "Subscription not found"
+          };
+        }
+        
+        console.log(`Manual rejection initiated for subscription: ${subscriptionId}`);
+        
+        // Update subscription
+        subscription.paymentStatus = "rejected";
+        subscription.paymentVerified = false;
+        subscription.paymentVerificationMethod = "manual";
+        subscription.adminVerified = true;
+        subscription.adminVerifiedBy = adminId;
+        subscription.adminNotes = reason || "";
+        subscription.lastVerificationAttempt = new Date();
+        subscription.isActive = false;
+        
+        // Save subscription
+        await subscription.save();
+        console.log("Payment has been manually rejected");
+        
+        // Find the user to notify them
+        const user = await User.findById(subscription.userId);
+        
+        if (user) {
+          // Send failure notification to user with the specific reason
+          await this.sendPaymentFailureNotification(user, subscription, reason || "Payment rejected by admin");
+        }
+        
+        return {
+          success: true,
+          message: "Payment manually rejected successfully",
+          subscription: {
+            id: subscription._id,
+            plan: subscription.packageId,
+            amount: subscription.paymentDetails?.amount,
+            status: subscription.paymentStatus
+          }
+        };
+      } catch (error) {
+        console.error("Error manually rejecting payment:", error);
+        return {
+          success: false,
+          message: "Error manually rejecting payment: " + error.message
+        };
+      }
+    }
+  
+    /**
+     * Get pending subscriptions that need verification
+     * @param {Number} limit Maximum number of subscriptions to return
+     * @param {Number} skip Number of subscriptions to skip (for pagination)
+     * @returns {Promise<Object>} Result with pending subscriptions
+     */
+    static async getPendingVerifications(limit = 20, skip = 0) {
+      try {
+        // Find pending subscriptions
+        const pendingSubscriptions = await Subscription.find({
+          paymentStatus: "pending",
+          // Only include subscriptions that were created within the last 7 days
+          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        })
+        .sort({ createdAt: -1 }) // Newest first
+        .skip(skip)
+        .limit(limit)
+        .populate("userId", "name email phone"); // Include basic user info
+        
+        // Get total count for pagination
+        const totalCount = await Subscription.countDocuments({
+          paymentStatus: "pending",
+          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        });
+        
+        return {
+          success: true,
+          pendingSubscriptions,
+          totalCount,
+          limit,
+          skip
+        };
+      } catch (error) {
+        console.error("Error getting pending verifications:", error);
+        return {
+          success: false,
+          message: "Error getting pending verifications: " + error.message,
+          pendingSubscriptions: [],
+          totalCount: 0
+        };
+      }
     }
   }
   
-  /**
-   * Manually reject payment
-   * @param {String} subscriptionId Subscription ID
-   * @param {String} adminId Admin ID
-   * @param {String} reason Rejection reason
-   * @returns {Promise<Object>} Result of rejection
-   */
-  static async manuallyRejectPayment(subscriptionId, adminId, reason) {
-    try {
-      if (!subscriptionId) {
-        return {
-          success: false,
-          message: "Subscription ID is required"
-        };
-      }
-      
-      // Find the subscription
-      const subscription = await Subscription.findById(subscriptionId);
-      
-      if (!subscription) {
-        return {
-          success: false,
-          message: "Subscription not found"
-        };
-      }
-      
-      console.log(`Manual rejection initiated for subscription: ${subscriptionId}`);
-      
-      // Update subscription
-      subscription.paymentStatus = "rejected";
-      subscription.paymentVerified = false;
-      subscription.paymentVerificationMethod = "manual";
-      subscription.adminVerified = true;
-      subscription.adminVerifiedBy = adminId;
-      subscription.adminNotes = reason || "";
-      subscription.lastVerificationAttempt = new Date();
-      subscription.isActive = false;
-      
-      // Save subscription
-      await subscription.save();
-      console.log("Payment has been manually rejected");
-      
-      // Find the user to notify them
-      const user = await User.findById(subscription.userId);
-      
-      if (user) {
-        // Send failure notification to user with the specific reason
-        await this.sendPaymentFailureNotification(user, subscription, reason || "Payment rejected by admin");
-      }
-      
-      return {
-        success: true,
-        message: "Payment manually rejected successfully",
-        subscription: {
-          id: subscription._id,
-          plan: subscription.packageId,
-          amount: subscription.paymentDetails?.amount,
-          status: subscription.paymentStatus
-        }
-      };
-    } catch (error) {
-      console.error("Error manually rejecting payment:", error);
-      return {
-        success: false,
-        message: "Error manually rejecting payment: " + error.message
-      };
-    }
-  }
-
-  /**
-   * Get pending subscriptions that need verification
-   * @param {Number} limit Maximum number of subscriptions to return
-   * @param {Number} skip Number of subscriptions to skip (for pagination)
-   * @returns {Promise<Object>} Result with pending subscriptions
-   */
-  static async getPendingVerifications(limit = 20, skip = 0) {
-    try {
-      // Find pending subscriptions
-      const pendingSubscriptions = await Subscription.find({
-        paymentStatus: "pending",
-        // Only include subscriptions that were created within the last 7 days
-        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-      })
-      .sort({ createdAt: -1 }) // Newest first
-      .skip(skip)
-      .limit(limit)
-      .populate("userId", "name email phone"); // Include basic user info
-      
-      // Get total count for pagination
-      const totalCount = await Subscription.countDocuments({
-        paymentStatus: "pending",
-        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-      });
-      
-      return {
-        success: true,
-        pendingSubscriptions,
-        totalCount,
-        limit,
-        skip
-      };
-    } catch (error) {
-      console.error("Error getting pending verifications:", error);
-      return {
-        success: false,
-        message: "Error getting pending verifications: " + error.message,
-        pendingSubscriptions: [],
-        totalCount: 0
-      };
-    }
-  }
-}
-
-module.exports = PaymentVerificationService;
+  module.exports = PaymentVerificationService;
