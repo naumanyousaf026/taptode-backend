@@ -7,17 +7,24 @@ const verifyAdminToken = require("../middleware/adminAuthMiddleware");
 // Route to add a new package (Admin only)
 router.post("/add-package", verifyAdminToken, async (req, res) => {
   try {
-    const { name, price, validityDays, maxNumbers, fetchFromGroups } = req.body;
+    const { name, price, validityDays, maxNumbers, fetchFromGroups, packageType } = req.body;
 
     // Validate input
-    if (!name || !price || !validityDays || !maxNumbers) {
+    if (!name || !price || !validityDays || !maxNumbers || !packageType) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
       });
     }
 
-    
+    // Validate packageType
+    if (![1, 2, 3].includes(packageType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid packageType. Must be 1, 2, or 3.",
+      });
+    }
+
     // Check if package already exists
     const existingPackage = await Package.findOne({ name });
     if (existingPackage) {
@@ -34,7 +41,9 @@ router.post("/add-package", verifyAdminToken, async (req, res) => {
       validityDays,
       maxNumbers,
       fetchFromGroups,
+      packageType,
     });
+
     await newPackage.save();
 
     res.status(201).json({
@@ -55,12 +64,19 @@ router.post("/add-package", verifyAdminToken, async (req, res) => {
 router.put("/update-package/:id", verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, validityDays, maxNumbers, fetchFromGroups } = req.body;
+    const { name, price, validityDays, maxNumbers, fetchFromGroups, packageType } = req.body;
 
-    // Find and update package
+    // Optional: validate packageType if provided
+    if (packageType && ![1, 2, 3].includes(packageType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid packageType. Must be 1, 2, or 3.",
+      });
+    }
+
     const updatedPackage = await Package.findByIdAndUpdate(
       id,
-      { name, price, validityDays, maxNumbers, fetchFromGroups },
+      { name, price, validityDays, maxNumbers, fetchFromGroups, packageType },
       { new: true, runValidators: true }
     );
 
@@ -103,16 +119,16 @@ router.get("/all-packages", async (req, res) => {
 router.delete("/delete-package/:id", verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const deletedPackage = await Package.findByIdAndDelete(id);
-    
+
     if (!deletedPackage) {
       return res.status(404).json({
         success: false,
         message: "Package not found"
       });
     }
-    
+
     res.json({
       success: true,
       message: "Package deleted successfully"

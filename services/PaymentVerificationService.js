@@ -5,7 +5,7 @@ const User = require("../models/User");
 
 // API Secret for authentication
 const API_SECRET = "e7d0098a46e0af84f43c2b240af5984ae267e08d";
-const WHATSAPP_ACCOUNT = "174737300545c48cce2e2d7fbdea1afc51c7c6ad266826cbcd9b426";
+const WHATSAPP_ACCOUNT = "174757536345c48cce2e2d7fbdea1afc51c7c6ad266829e2434393e";
 
 // Payment method constants
 const PAYMENT_METHODS = {
@@ -231,7 +231,7 @@ class PaymentVerificationService {
       
       return processedNotifications;
     } catch (error) {
-      console.error("Error in fetchNotifications:", error);
+      // console.error("Error in fetchNotifications:", error);
       return [];
     }
   }
@@ -276,7 +276,7 @@ class PaymentVerificationService {
       
       return processedSmsMessages;
     } catch (error) {
-      console.error("Error in fetchSmsMessages:", error);
+      // console.error("Error in fetchSmsMessages:", error);
       return [];
     }
   }
@@ -594,13 +594,13 @@ class PaymentVerificationService {
         headers: formData.getHeaders() 
       });
       
-      console.log("WhatsApp message sent successfully:", response.data);
+      // console.log("WhatsApp message sent successfully:", response.data);
       return {
         success: true,
         response: response.data
       };
     } catch (error) {
-      console.error("Error sending WhatsApp message:", error);
+      // console.error("Error sending WhatsApp message:", error);
       return {
         success: false,
         error: error.message
@@ -631,19 +631,19 @@ static async verifyPaymentWithSubscription(paymentDetails) {
     }).populate("userId").populate("packageId");
 
     if (!subscription) {
-      console.log("No pending subscription found for transaction ID:", paymentDetails.transactionId);
+      // console.log("No pending subscription found for transaction ID:", paymentDetails.transactionId);
       return false;
     }
 
     const user = subscription.userId;
     if (!user) {
-      console.log("User not found for subscription:", subscription._id);
+      // console.log("User not found for subscription:", subscription._id);
       return false;
     }
 
     // If this transaction ID has already been used, reject the payment
     if (existingSubscription) {
-      console.log(`Transaction ID ${paymentDetails.transactionId} has already been used in subscription: ${existingSubscription._id}`);
+      // console.log(`Transaction ID ${paymentDetails.transactionId} has already been used in subscription: ${existingSubscription._id}`);
       
       // Update subscription status to 'failed'
       subscription.paymentStatus = "failed";
@@ -669,7 +669,7 @@ static async verifyPaymentWithSubscription(paymentDetails) {
     // Get the required package details
     const selectedPackage = subscription.packageId;
     if (!selectedPackage) {
-      console.log("Package details not found for subscription:", subscription._id);
+      // console.log("Package details not found for subscription:", subscription._id);
       // Update subscription status to 'failed'
       subscription.paymentStatus = "failed";
       subscription.lastVerificationAttempt = new Date();
@@ -682,7 +682,7 @@ static async verifyPaymentWithSubscription(paymentDetails) {
     // Check the payment amount against the selected package's price
     const expectedAmount = selectedPackage.price;
     if (!paymentDetails.amount || paymentDetails.amount < expectedAmount) {
-      console.log(`Payment amount mismatch. Expected: ${expectedAmount}, Received: ${paymentDetails.amount}`);
+      // console.log(`Payment amount mismatch. Expected: ${expectedAmount}, Received: ${paymentDetails.amount}`);
       
       // Update subscription status to 'failed'
       subscription.paymentStatus = "failed";
@@ -735,7 +735,7 @@ static async verifyPaymentWithSubscription(paymentDetails) {
     
     return true;
   } catch (error) {
-    console.error("Error verifying payment with subscription:", error);
+    // console.error("Error verifying payment with subscription:", error);
     return false;
   }
 }
@@ -810,11 +810,11 @@ static async checkDuplicateTransaction(transactionId) {
   static async sendPaymentSuccessNotification(user, subscription) {
     try {
       if (!user || !user.phone) {
-        console.log("Cannot send notification: user phone missing");
+        // console.log("Cannot send notification: user phone missing");
         return;
       }
       
-      console.log(`Sending payment success notification to user ${user._id}`);
+      // console.log(`Sending payment success notification to user ${user._id}`);
       
       // Get package details
       const packageName = subscription.packageName || "Subscription Package";
@@ -836,9 +836,9 @@ static async checkDuplicateTransaction(transactionId) {
         })
       ]);
       
-      console.log(`Success notifications sent to ${user.phone}`);
+      // console.log(`Success notifications sent to ${user.phone}`);
     } catch (error) {
-      console.error("Error sending payment success notification:", error);
+      // console.error("Error sending payment success notification:", error);
     }
   }
 
@@ -856,7 +856,7 @@ static async checkDuplicateTransaction(transactionId) {
           return;
         }
         
-        console.log(`Sending payment failure notification to user ${user._id}`);
+        // console.log(`Sending payment failure notification to user ${user._id}`);
         
         // Get package details
         const packageName = subscription.packageName || "Subscription Package";
@@ -875,9 +875,9 @@ static async checkDuplicateTransaction(transactionId) {
           })
         ]);
         
-        console.log(`Failure notifications sent to ${user.phone}`);
+        // console.log(`Failure notifications sent to ${user.phone}`);
       } catch (error) {
-        console.error("Error sending payment failure notification:", error);
+        // console.error("Error sending payment failure notification:", error);
       }
     }
   
@@ -890,11 +890,11 @@ static async checkDuplicateTransaction(transactionId) {
     static async sendIncompletePaymentNotification(user, subscription) {
       try {
         if (!user || !user.phone) {
-          console.log("Cannot send notification: user phone missing");
+          // console.log("Cannot send notification: user phone missing");
           return;
         }
         
-        console.log(`Sending incomplete payment notification to user ${user._id}`);
+        // console.log(`Sending incomplete payment notification to user ${user._id}`);
         
         // Get package details
         const packageName = subscription.packageName || "Subscription Package";
@@ -928,11 +928,11 @@ static async checkDuplicateTransaction(transactionId) {
     static async sendDuplicateTransactionNotification(user, transactionId) {
       try {
         if (!user || !user.phone) {
-          console.log("Cannot send notification: user phone missing");
+          // console.log("Cannot send notification: user phone missing");
           return;
         }
         
-        console.log(`Sending duplicate transaction notification to user ${user._id}`);
+        // console.log(`Sending duplicate transaction notification to user ${user._id}`);
         
         const reason = `Transaction ID ${transactionId} has already been used for a previous subscription. Please use a new transaction ID.`;
         
@@ -950,9 +950,9 @@ static async checkDuplicateTransaction(transactionId) {
           })
         ]);
         
-        console.log(`Duplicate transaction notifications sent to ${user.phone}`);
+        // console.log(`Duplicate transaction notifications sent to ${user.phone}`);
       } catch (error) {
-        console.error("Error sending duplicate transaction notification:", error);
+        // console.error("Error sending duplicate transaction notification:", error);
       }
     }
   
@@ -982,7 +982,7 @@ static async checkDuplicateTransaction(transactionId) {
           };
         }
         
-        console.log(`Manual verification initiated for subscription: ${subscriptionId}`);
+        // console.log(`Manual verification initiated for subscription: ${subscriptionId}`);
         
         // Update subscription
         subscription.paymentStatus = "completed";
@@ -997,7 +997,7 @@ static async checkDuplicateTransaction(transactionId) {
         
         // Save subscription
         await subscription.save();
-        console.log("Payment has been manually verified and subscription status updated to COMPLETED");
+        // console.log("Payment has been manually verified and subscription status updated to COMPLETED");
         
         // Find the user to update their subscription status
         const user = await User.findById(subscription.userId);
@@ -1009,7 +1009,7 @@ static async checkDuplicateTransaction(transactionId) {
           user.subscriptionPlan = subscription.packageId;
           
           await user.save();
-          console.log("User subscription status updated to ACTIVE");
+          // console.log("User subscription status updated to ACTIVE");
           
           // Send success notification to user
           await this.sendPaymentSuccessNotification(user, subscription);
@@ -1027,7 +1027,7 @@ static async checkDuplicateTransaction(transactionId) {
           }
         };
       } catch (error) {
-        console.error("Error manually verifying payment:", error);
+        // console.error("Error manually verifying payment:", error);
         return {
           success: false,
           message: "Error manually verifying payment: " + error.message
@@ -1061,7 +1061,7 @@ static async checkDuplicateTransaction(transactionId) {
           };
         }
         
-        console.log(`Manual rejection initiated for subscription: ${subscriptionId}`);
+        // console.log(`Manual rejection initiated for subscription: ${subscriptionId}`);
         
         // Update subscription
         subscription.paymentStatus = "rejected";
@@ -1075,7 +1075,7 @@ static async checkDuplicateTransaction(transactionId) {
         
         // Save subscription
         await subscription.save();
-        console.log("Payment has been manually rejected");
+        // console.log("Payment has been manually rejected");
         
         // Find the user to notify them
         const user = await User.findById(subscription.userId);
@@ -1096,7 +1096,7 @@ static async checkDuplicateTransaction(transactionId) {
           }
         };
       } catch (error) {
-        console.error("Error manually rejecting payment:", error);
+        // console.error("Error manually rejecting payment:", error);
         return {
           success: false,
           message: "Error manually rejecting payment: " + error.message
@@ -1137,7 +1137,7 @@ static async checkDuplicateTransaction(transactionId) {
           skip
         };
       } catch (error) {
-        console.error("Error getting pending verifications:", error);
+        // console.error("Error getting pending verifications:", error);
         return {
           success: false,
           message: "Error getting pending verifications: " + error.message,
